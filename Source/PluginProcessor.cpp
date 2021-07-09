@@ -100,6 +100,11 @@ void SpecEQAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
 
     leftChain.prepare(spec);
     rightChain.prepare(spec);
+
+    auto chainSettings = getChainSettings(apvts);
+    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sampleRate,chainSettings.peakFreq,chainSettings.peakQuality,juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibles));
+    leftChain.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
+    rightChain.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
 }
 
 void SpecEQAudioProcessor::releaseResources()
@@ -149,6 +154,13 @@ void SpecEQAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    auto chainSettings = getChainSettings(apvts);
+    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(), chainSettings.peakFreq, chainSettings.peakQuality, juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibles));
+    leftChain.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
+    rightChain.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
+
+
+
     juce::dsp::AudioBlock<float> block(buffer);
     auto leftBlock = block.getSingleChannelBlock(0);
     auto rightBlock = block.getSingleChannelBlock(1);
@@ -168,8 +180,8 @@ bool SpecEQAudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* SpecEQAudioProcessor::createEditor()
 {
-    return new SpecEQAudioProcessorEditor (*this);
-    //return new juce::GenericAudioProcessorEditor(*this);
+    //return new SpecEQAudioProcessorEditor (*this);
+    return new juce::GenericAudioProcessorEditor(*this);
 }
 
 //==============================================================================
@@ -197,11 +209,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout SpecEQAudioProcessor::create
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
 
-    layout.add(std::make_unique<juce::AudioParameterFloat>("LowCutFreq","LowCutFreq",juce::NormalisableRange<float>(20.0f,20000.0f,1.0f,1.0f),20.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("HighCutFreq", "HighCutFreq", juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 1.0f), 20000.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("PeakFreq", "PeakFreq", juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 1.0f), 750.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("PeakGain", "PeakGain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f, 1.0f), 0.0f));
-    layout.add(std::make_unique<juce::AudioParameterFloat>("PeakQuality", "PeakQuality", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f, 1.0f), 1.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("LowCutFreq","LowCutFreq",juce::NormalisableRange<float>(20.0f,20000.0f,1.0f,0.25f),20.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("HighCutFreq", "HighCutFreq", juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.25f), 20000.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("PeakFreq", "PeakFreq", juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.25f), 750.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("PeakGain", "PeakGain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f, 0.25f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>("PeakQuality", "PeakQuality", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f, 0.25f), 1.0f));
     juce::StringArray stringArray;
     for (int i = 0; i < 4; ++i)
     {
@@ -213,4 +225,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout SpecEQAudioProcessor::create
     layout.add(std::make_unique<juce::AudioParameterChoice>("LowCutSlope", "LowCutSlope", stringArray, 0));
     layout.add(std::make_unique<juce::AudioParameterChoice>("HighCutSlope", "HighCutSlope", stringArray, 0));
     return layout;
+}
+ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts)
+{
+    ChainSettings settings;
+    settings.lowCutFreq = apvts.getRawParameterValue("LowCutFreq")->load();
+    settings.highCutFreq = apvts.getRawParameterValue("HighCutFreq")->load();
+    settings.peakFreq = apvts.getRawParameterValue("PeakFreq")->load();
+    settings.peakGainInDecibles = apvts.getRawParameterValue("PeakGain")->load();
+    settings.peakQuality = apvts.getRawParameterValue("PeakQuality")->load();
+    settings.lowCutSlope = apvts.getRawParameterValue("LowCutSlope")->load();
+    settings.highCutSlope = apvts.getRawParameterValue("HighCutSlope")->load();
+
+    return settings;
 }
