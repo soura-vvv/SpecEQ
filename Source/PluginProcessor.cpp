@@ -272,10 +272,10 @@ void SpecEQAudioProcessor::updateHighCutFilters(const ChainSettings& chainSettin
         getSampleRate(),
         2 * (chainSettings.highCutSlope + 1));
 
-    auto& leftHighCut = leftChain.get<ChainPositions::LowCut>();
+    auto& leftHighCut = leftChain.get<ChainPositions::HighCut>();
     updateCutFilter(leftHighCut, highCutCoefficients, chainSettings.highCutSlope);
 
-    auto& rightHighCut = rightChain.get<ChainPositions::LowCut>();
+    auto& rightHighCut = rightChain.get<ChainPositions::HighCut>();
     updateCutFilter(rightHighCut, highCutCoefficients, chainSettings.highCutSlope);
 
 }
