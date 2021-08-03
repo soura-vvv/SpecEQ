@@ -22,7 +22,7 @@ struct LookAndFeel :juce::LookAndFeel_V4
         float sliderPosProportional,
         float rotaryStartAngle,
         float rotaryEndAngle,
-        juce::Slider&) override {};
+        juce::Slider&) override ;
 };
 
 
@@ -41,7 +41,15 @@ struct RotarySliderWithLabels:public juce::Slider
     {
         setLookAndFeel(nullptr);
     }
-    void paint(juce::Graphics& g) override {};
+
+    struct LabelPos 
+    {
+        float pos;
+        juce::String labels;
+
+    };
+    juce::Array<LabelPos> labels;
+    void paint(juce::Graphics& g) override;
     juce::Rectangle<int> getSliderBounds() const;
     int getTextHeight() const { return 14; }
     juce::String getDisplyString() const;
@@ -65,6 +73,7 @@ struct ResponseCurveComponent :public juce::Component,
     SpecEQAudioProcessor& audioProcessor;
     void paint(juce::Graphics& g) override;
     MonoChain monoChain;
+    void updateChain();
 };
 
 class SpecEQAudioProcessorEditor  : public juce::AudioProcessorEditor

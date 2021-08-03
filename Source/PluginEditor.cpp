@@ -8,7 +8,152 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+void LookAndFeel::drawRotarySlider(juce::Graphics& g,
+    int x, int y, int width, int height,
+    float sliderPosProportional,
+    float rotaryStartAngle,
+    float rotaryEndAngle,
+    juce::Slider& slider) 
+{
+    using namespace juce;
+    auto bounds = Rectangle<float>(x,y,width,height);
+    g.setColour(Colour(221, 160, 221));
+    g.fillEllipse(bounds);
 
+    g.setColour(Colour(255, 0, 255));
+    g.drawEllipse(bounds,1.f);
+
+
+
+    if (auto* rswl = dynamic_cast<RotarySliderWithLabels*>(&slider))
+    {
+        auto center = bounds.getCentre();
+
+        Path p;
+        Rectangle<float> r;
+        r.setLeft(center.getX() - 2);
+        r.setRight(center.getX() + 2);
+        r.setTop(bounds.getY());
+        r.setBottom(center.getY()-rswl->getTextHeight()*1.5);
+        p.addRoundedRectangle(r,2.f);
+
+        jassert(rotaryStartAngle < rotaryEndAngle);
+        auto sliderAngRad = jmap(sliderPosProportional, 0.f, 1.f, rotaryStartAngle, rotaryEndAngle);
+
+        p.applyTransform(AffineTransform().rotated(sliderAngRad, center.getX(), center.getY()));
+        g.fillPath(p);
+
+        g.setFont(rswl->getTextHeight());
+        auto text = rswl->getDisplyString();
+        auto strWidth = g.getCurrentFont().getStringWidth(text);
+
+        r.setSize(strWidth + 4, rswl->getTextHeight() + 2);
+        r.setCentre(bounds.getCentre());
+
+        g.setColour(Colours::black);
+        g.fillRect(r);
+
+        g.setColour(Colours::white);
+        g.drawFittedText(text, r.toNearestInt(), juce::Justification::centred, 1);
+    }
+
+    
+   
+
+    //g.setColour(Colour(38, 43, 226));
+    
+}
+
+void RotarySliderWithLabels::paint(juce::Graphics& g)
+{
+    g.fillAll(juce::Colours::black);
+    using namespace juce;
+    
+    auto startAngle = degreesToRadians(180.f + 45.f);
+    auto endAngle = degreesToRadians(180.f - 45.f)+MathConstants<float>::twoPi;
+
+    auto range = getRange();
+
+    auto sliderBounds = getSliderBounds();
+    
+    getLookAndFeel().drawRotarySlider(g,
+        sliderBounds.getX(),
+        sliderBounds.getY(),
+        sliderBounds.getWidth(), 
+        sliderBounds.getHeight(), 
+        jmap(getValue(),range.getStart(), range.getEnd(), 0.0, 1.0), 
+        startAngle, 
+        endAngle, 
+        *this);
+    auto center = sliderBounds.toFloat().getCentre();
+    auto radius = sliderBounds.getWidth() * 0.5f;
+
+    g.setColour(Colour(173, 255, 47));
+    g.setFont(getTextHeight());
+
+    auto numChoices = labels.size();
+    for (int i = 0; i < numChoices; ++i)
+    {
+        auto pos = labels[i].pos;
+        jassert(0.f <= pos);
+        jassert(pos <= 1.f);
+
+        auto angle= jmap(pos, 0.f, 1.f, startAngle, endAngle);
+        auto c=center.getPointOnCircumference(radius + getTextHeight() * 0.5f + 1, angle);
+
+        Rectangle<float> r;
+        auto str = labels[i].labels;
+        r.setSize(g.getCurrentFont().getStringWidth(str), getTextHeight());
+        r.setCentre(c);
+        r.setY(r.getY() + getTextHeight());
+
+        g.drawFittedText(str, r.toNearestInt(), juce::Justification::centred, 1);
+
+    }
+}
+juce::Rectangle<int> RotarySliderWithLabels::getSliderBounds() const
+{
+    auto bounds = getLocalBounds();
+    auto size = juce::jmin(bounds.getWidth(), bounds.getHeight());
+
+    size -= getTextHeight() * 2;
+    juce::Rectangle<int> r;
+    r.setSize(size, size);
+    r.setCentre(bounds.getCentreX(), 0);
+    r.setY(2);
+
+    return r;
+}
+
+juce::String RotarySliderWithLabels::getDisplyString() const
+{
+    if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*>(param))
+        return choiceParam->getCurrentChoiceName();
+    juce::String str;
+    bool addk = false;
+    if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+    {
+        float val = getValue();
+        if (val > 999.f)
+        {
+            val /= 1000.f;
+            addk = true;
+        }
+        str = juce::String(val,(addk ? 2 : 0));
+    }
+    else
+        jassertfalse;
+    if (suffix.isNotEmpty())
+    {
+        str << " ";
+        if (addk)
+            str << "k";
+        str << suffix;
+    }
+
+    return str;
+}
+//====================================================================================
 ResponseCurveComponent::ResponseCurveComponent(SpecEQAudioProcessor& p) :audioProcessor(p)
 {
     const auto& params = audioProcessor.getParameters();
@@ -16,6 +161,7 @@ ResponseCurveComponent::ResponseCurveComponent(SpecEQAudioProcessor& p) :audioPr
     {
         param->addListener(this);
     }
+    updateChain();
     startTimerHz(60);
 }
 
@@ -32,18 +178,27 @@ void ResponseCurveComponent::parameterValueChanged(int parameterIndex, float new
 {
     parametersChanged.set(true);
 }
+
+void ResponseCurveComponent::updateChain()
+{
+    auto chainSettings = getChainSettings(audioProcessor.apvts);
+    auto peakCoefficients = makePeakFilter(chainSettings, audioProcessor.getSampleRate());
+    auto lowCutCoefficients = makeLowCutFilter(chainSettings, audioProcessor.getSampleRate());
+    auto highCutCoefficients = makeHighCutFilter(chainSettings, audioProcessor.getSampleRate());
+    updateCoefficients(monoChain.get<ChainPositions::Peak>().coefficients, peakCoefficients);
+    updateCutFilter(monoChain.get<ChainPositions::LowCut>(), lowCutCoefficients, chainSettings.lowCutSlope);
+    updateCutFilter(monoChain.get<ChainPositions::HighCut>(), highCutCoefficients, chainSettings.highCutSlope);
+
+    
+}
+
+
 void ResponseCurveComponent::timerCallback()
 {
     if (parametersChanged.compareAndSetBool(false, true))
     {
         //Update MonoChain
-        auto chainSettings = getChainSettings(audioProcessor.apvts);
-        auto peakCoefficients = makePeakFilter(chainSettings, audioProcessor.getSampleRate());
-        auto lowCutCoefficients = makeLowCutFilter(chainSettings, audioProcessor.getSampleRate());
-        auto highCutCoefficients = makeHighCutFilter(chainSettings, audioProcessor.getSampleRate());
-        updateCoefficients(monoChain.get<ChainPositions::Peak>().coefficients, peakCoefficients);
-        updateCutFilter(monoChain.get<ChainPositions::LowCut>(), lowCutCoefficients, chainSettings.lowCutSlope);
-        updateCutFilter(monoChain.get<ChainPositions::HighCut>(), highCutCoefficients, chainSettings.highCutSlope);
+        updateChain();
 
         repaint();
 
@@ -141,11 +296,35 @@ SpecEQAudioProcessorEditor::SpecEQAudioProcessorEditor(SpecEQAudioProcessor& p)
 {
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
+
+    peakFreqSlider.labels.add({ 0.f,"20Hz" });
+    peakFreqSlider.labels.add({ 1.f,"20kHz" });
+
+    peakGainSlider.labels.add({ 0.f,"-24dB" });
+    peakGainSlider.labels.add({ 1.f,"+24dB" });
+
+    peakQualitySlider.labels.add({ 0.f,"0.1" });
+    peakQualitySlider.labels.add({ 1.f,"10.0" });
+
+    lowCutFreqSlider.labels.add({ 0.f,"20Hz" });
+    lowCutFreqSlider.labels.add({ 1.f,"20kHz" });
+
+    highCutFreqSlider.labels.add({ 0.f,"20Hz" });
+    highCutFreqSlider.labels.add({ 1.f,"20kHz" });
+
+    lowCutSlopeSlider.labels.add({ 0.f,"12" });
+    lowCutSlopeSlider.labels.add({ 1.f,"48" });
+
+    highCutSlopeSlider.labels.add({ 0.f,"12" });
+    highCutSlopeSlider.labels.add({ 1.f,"48" });
+
+
+
     for (auto* comp : getComps())
         addAndMakeVisible(comp);
 
    
-    setSize (600, 400);
+    setSize (600, 480);
 }
 
 SpecEQAudioProcessorEditor::~SpecEQAudioProcessorEditor()
@@ -156,7 +335,7 @@ SpecEQAudioProcessorEditor::~SpecEQAudioProcessorEditor()
 //==============================================================================
 void SpecEQAudioProcessorEditor::paint (juce::Graphics& g)
 {
-
+    g.fillAll(juce::Colours::black);
     
 }
 
@@ -165,10 +344,16 @@ void SpecEQAudioProcessorEditor::resized()
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
     auto bounds = getLocalBounds();
-    auto responseArea = bounds.removeFromTop(bounds.getHeight() * 0.33);
+    float hRatio = 25.f/100.f;
+    
+    auto responseArea = bounds.removeFromTop(bounds.getHeight() *hRatio);
+
+    bounds.removeFromTop(5);
     auto lowCutArea = bounds.removeFromLeft(bounds.getWidth() * 0.33);
     auto highCutArea = bounds.removeFromRight(bounds.getWidth() * 0.5);
     responseCurveComponent.setBounds(responseArea);
+    
+
     lowCutFreqSlider.setBounds(lowCutArea.removeFromTop(lowCutArea.getHeight()*0.5));
     lowCutSlopeSlider.setBounds(lowCutArea);
     highCutFreqSlider.setBounds(highCutArea.removeFromTop(highCutArea.getHeight() * 0.5));
