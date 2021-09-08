@@ -359,6 +359,12 @@ void ResponseCurveComponent::paint(juce::Graphics& g)
         r.setCentre(r.getCentreX(), y);
         g.drawFittedText(str, r, juce::Justification::centred, 1);
 
+        str.clear();
+        str << (gDb - 24.f);
+        r.setX(1);
+        textWidth = g.getCurrentFont().getStringWidth(str);
+        r.setSize(textWidth, fontHeight);
+        g.drawFittedText(str, r, juce::Justification::centred, 1);
     }
 }
 
