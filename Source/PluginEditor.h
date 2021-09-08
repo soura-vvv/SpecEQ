@@ -72,8 +72,12 @@ struct ResponseCurveComponent :public juce::Component,
     void timerCallback() override;
     SpecEQAudioProcessor& audioProcessor;
     void paint(juce::Graphics& g) override;
+    void resized() override;
     MonoChain monoChain;
     void updateChain();
+    juce::Image background;
+    juce::Rectangle<int> getRenderArea();
+    juce::Rectangle<int> getAnalysisArea();
 };
 
 class SpecEQAudioProcessorEditor  : public juce::AudioProcessorEditor
